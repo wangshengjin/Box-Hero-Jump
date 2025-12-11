@@ -1,7 +1,8 @@
 import { LevelData, PlatformData, Vector2 } from './types';
 
-export const GAME_WIDTH = 800;
-export const GAME_HEIGHT = 600;
+// Mobile Portrait Resolution
+export const GAME_WIDTH = 750;
+export const GAME_HEIGHT = 1334;
 
 export const COLORS = {
   background: 0xdcf2f9, // Light blue sky
@@ -11,206 +12,111 @@ export const COLORS = {
   flagPole: 0x555555,
   flag: 0xff3333,
   text: 0x000000,
+  aimLine: 0xFFFFFF,    // White aiming line
 };
 
+// Physics adjusted for Slingshot/Impulse mechanics
+// TUNING: Made the game slower and floatier based on feedback
 export const PHYSICS_OPTS = {
-  gravity: 1.5,      
-  friction: 0.1,       
-  frictionAir: 0.02, 
-  restitution: 0.0,  
-  jumpPower: 14,     
-  moveSpeed: 5,      
+  gravity: 1.5,        // Gravity slightly up to compensate for lower force (less floaty at peak)
+  friction: 0.8,       // High friction so player stops quickly on platforms
+  frictionAir: 0.04,   // Air resistance
+  restitution: 0.1,    // Less bounce
+  jumpForceMultiplier: 0.018, // Significantly reduced sensitivity (was 0.025)
+  maxJumpForce: 0.28,   // Reduced max speed limit (was 0.35)
 };
 
-// Helper to generate 30 unique, progressively harder levels
+// Helper to generate 30 Vertical Climbing Levels
 const generateLevels = (): LevelData[] => {
   const levels: LevelData[] = [];
   const TOTAL_LEVELS = 30;
 
   for (let id = 1; id <= TOTAL_LEVELS; id++) {
     const platforms: PlatformData[] = [];
-    let startPos: Vector2 = { x: 50, y: 500 };
-    let goalPos: Vector2 = { x: 750, y: 500 };
-    let maxJumps3 = 0;
+    
+    // Vertical Coordinate System: 
+    // Y gets smaller as we go UP.
+    // Start at bottom (e.g., 0 relative to bottom of level), Goal at top.
+    
+    // Define the "height" of the level based on difficulty
+    const levelHeight = 1500 + (id * 200); // Levels get taller
+    const groundY = levelHeight; // The bottom of the world
+    
+    const startPos: Vector2 = { x: GAME_WIDTH / 2, y: groundY - 100 };
+    const goalPos: Vector2 = { x: GAME_WIDTH / 2, y: 150 }; // Goal is always near top (y=150)
 
-    // --- PHASE 1: THE PLAINS (Levels 1-5) ---
-    // Focus: Basic horizontal spacing and double jump introduction.
-    if (id <= 5) {
-      startPos = { x: 60, y: 500 };
-      goalPos = { x: 740, y: 500 };
+    // Base Platform
+    platforms.push({ x: GAME_WIDTH / 2, y: groundY, width: GAME_WIDTH, height: 60 });
+    
+    // Generate Platforms between Start and Goal
+    // Playable area Y: from (groundY - 150) to 250
+    let currentY = groundY - 250;
+    const endY = 250;
+    
+    // Difficulty Factors - PROGRESSIVE
+    // Reduced gaps to match the weaker jump force
+    const baseGap = 100 + Math.min(50, id * 2); 
+    const gapVariation = 20 + Math.min(30, id);
+    
+    const gapMin = baseGap;
+    const gapMax = baseGap + gapVariation;
+    
+    const platformW = Math.max(80, 220 - (id * 5)); // Width decreases
+    
+    // Start generating from center
+    let lastX = GAME_WIDTH / 2;
+
+    while (currentY > endY) {
+      const isLeft = Math.random() > 0.5;
       
-      // Start & End
-      platforms.push({ x: 60, y: 550, width: 120, height: 40 });
-      platforms.push({ x: 740, y: 550, width: 120, height: 40 });
+      let nextX;
 
-      // Between x=120 and x=680 is 560px gap.
-      // L1: 4 middle platforms (Easy)
-      // L5: 1 middle platform (Hard)
-      const numMiddle = 6 - id; 
-      const spacing = 680 / (numMiddle + 1);
-
-      for (let k = 1; k <= numMiddle; k++) {
-        platforms.push({
-          x: 60 + (spacing * k),
-          y: 550,
-          width: 90 - (id * 5), // Getting slightly narrower
-          height: 40
-        });
+      if (id <= 3) {
+        // Phase 1 (Tutorial-ish): Very predictable zig zag
+        const shift = 80 + Math.random() * 80;
+        nextX = lastX + (isLeft ? -shift : shift);
+      } else if (id <= 10) {
+         // Phase 2: Standard
+         const shift = 130 + Math.random() * 120;
+         nextX = lastX + (isLeft ? -shift : shift);
+      } else {
+         // Phase 3: Chaos
+         if (lastX < GAME_WIDTH / 2) {
+             nextX = GAME_WIDTH / 2 + 50 + Math.random() * 300; 
+         } else {
+             nextX = GAME_WIDTH / 2 - 50 - Math.random() * 300;
+         }
       }
-      maxJumps3 = numMiddle + 4;
+
+      // Clamp X to be within screen bounds (with some margin for platform width)
+      const margin = platformW / 2 + 20;
+      if (nextX < margin) nextX = margin;
+      if (nextX > GAME_WIDTH - margin) nextX = GAME_WIDTH - margin;
+
+      platforms.push({
+        x: nextX,
+        y: currentY,
+        width: platformW,
+        height: 40
+      });
+
+      lastX = nextX;
+      // Move up
+      currentY -= (gapMin + Math.random() * (gapMax - gapMin));
     }
+    
+    // Goal Platform
+    platforms.push({ x: goalPos.x, y: goalPos.y + 50, width: 140, height: 40 });
 
-    // --- PHASE 2: THE HILLS (Levels 6-10) ---
-    // Focus: Height variation (Sine waves).
-    else if (id <= 10) {
-      startPos = { x: 50, y: 450 };
-      goalPos = { x: 750, y: 450 };
-      
-      platforms.push({ x: 50, y: 500, width: 100, height: 40 });
-      platforms.push({ x: 750, y: 500, width: 100, height: 40 });
-
-      const count = 5;
-      const stepX = 110; // Fixed horizontal step
-      
-      for (let k = 1; k <= count; k++) {
-        // Amplitude grows with level difficulty
-        const amplitude = 60 + ((id - 5) * 25); 
-        const yOffset = Math.sin((k / count) * Math.PI) * amplitude;
-        
-        platforms.push({
-          x: 100 + (k * stepX),
-          y: 500 - yOffset,
-          width: 80,
-          height: 40
-        });
-      }
-      maxJumps3 = 8 + (id - 5);
-    }
-
-    // --- PHASE 3: THE STAIRS (Levels 11-15) ---
-    // Focus: Vertical precision. Going Up or Down.
-    else if (id <= 15) {
-      const isUpward = id % 2 !== 0; // Alternate up/down levels
-      
-      const groundY = isUpward ? 550 : 200;
-      const targetY = isUpward ? 200 : 550;
-      
-      startPos = { x: 50, y: groundY - 50 };
-      goalPos = { x: 750, y: targetY - 50 };
-      
-      platforms.push({ x: 50, y: groundY, width: 100, height: 40 });
-      platforms.push({ x: 750, y: targetY, width: 100, height: 40 });
-      
-      const steps = 6;
-      const xDist = 600 / steps;
-      const totalYDist = targetY - groundY;
-      
-      for(let s=1; s < steps; s++) {
-         const progress = s / steps;
-         // Add some randomness to height to make it less perfect stairs
-         const jitter = (Math.random() * 40) - 20;
-         
-         platforms.push({
-           x: 100 + (s * xDist),
-           y: groundY + (progress * totalYDist) + jitter,
-           width: 75 - ((id-10) * 4), // Getting narrower
-           height: 30
-         });
-      }
-      maxJumps3 = 10;
-    }
-
-    // --- PHASE 4: THE ARCHIPELAGO (Levels 16-20) ---
-    // Focus: Small platforms, varying heights, precision landings.
-    else if (id <= 20) {
-      startPos = { x: 40, y: 350 };
-      goalPos = { x: 760, y: 350 };
-      
-      platforms.push({ x: 40, y: 400, width: 80, height: 40 });
-      platforms.push({ x: 760, y: 400, width: 80, height: 40 });
-      
-      const numIslands = 6;
-      // Deterministic pseudo-random based on ID
-      const seed = id * 1337;
-      
-      for(let k=1; k<=numIslands; k++) {
-        const xPos = 100 + (k * 90);
-        // Vary height wildly but keeping it on screen (150 to 550)
-        const yPos = 350 + (Math.sin(seed + k) * 120); 
-        
-        platforms.push({
-          x: xPos,
-          y: yPos,
-          width: 50, // Small!
-          height: 25
-        });
-      }
-      maxJumps3 = 14;
-    }
-
-    // --- PHASE 5: THE TOWER (Levels 21-25) ---
-    // Focus: Vertical zig-zag climbing.
-    else if (id <= 25) {
-      startPos = { x: 100, y: 550 };
-      // Goal is high up
-      const floors = 5;
-      const floorHeight = 90;
-      const topY = 600 - (floors * floorHeight);
-      goalPos = { x: 400, y: topY - 50 };
-
-      // Base
-      platforms.push({ x: 100, y: 600, width: 160, height: 40 });
-      
-      for(let f=1; f<=floors; f++) {
-        const isLeft = f % 2 !== 0; // Zig Zag
-        platforms.push({
-          x: isLeft ? 250 : 550,
-          y: 600 - (f * floorHeight),
-          width: 120 - ((id-20) * 10), // Shrinking width
-          height: 30
-        });
-      }
-      
-      // Top Platform for goal
-      platforms.push({ x: 400, y: topY, width: 100, height: 30 });
-      maxJumps3 = 16;
-    }
-
-    // --- PHASE 6: INFERNO (Levels 26-30) ---
-    // Focus: The ultimate test. Long gaps, tiny blocks.
-    else {
-      startPos = { x: 50, y: 300 };
-      goalPos = { x: 750, y: 300 };
-      
-      platforms.push({ x: 50, y: 350, width: 60, height: 40 });
-      platforms.push({ x: 750, y: 350, width: 60, height: 40 });
-      
-      const count = 7;
-      for(let s=1; s<=count; s++) {
-          const x = 50 + (s * 95);
-          // A difficult arch pattern
-          const y = 350 + Math.cos((s/count) * Math.PI * 2) * 150;
-          
-          platforms.push({
-              x: x,
-              y: y,
-              width: 35, // Tiny
-              height: 20
-          });
-      }
-      maxJumps3 = 18;
-    }
-
-    // Calculate 2-star threshold (lenient)
-    const maxJumps2 = Math.floor(maxJumps3 * 1.5);
+    const estimatedJumps = Math.ceil((levelHeight - 150) / 120) + 2;
 
     levels.push({
       id,
       startPos,
       goalPos,
       platforms,
-      maxJumps3Stars: maxJumps3,
-      maxJumps2Stars: maxJumps2
+      maxJumps3Stars: estimatedJumps,
+      maxJumps2Stars: Math.ceil(estimatedJumps * 1.5)
     });
   }
 
