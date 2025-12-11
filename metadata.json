@@ -1,0 +1,5 @@
+{
+  "name": "Box Hero Jump",
+  "description": "A physics-based platformer where you guide an orange box through tricky levels. Features unlockable levels, star ratings, and smooth physics.",
+  "requestFramePermissions": []
+}
